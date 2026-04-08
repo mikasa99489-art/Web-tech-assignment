@@ -38,14 +38,71 @@ export default function Settings() {
     setExporting(true);
     try {
       const data = await api.get('/export/health-report');
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `medvault-health-report-${new Date().toISOString().split('T')[0]}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success('Health report exported');
+      const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF();
+      let y = 20;
+
+      const addTitle = (text) => { doc.setFontSize(14); doc.setFont(undefined, 'bold'); doc.text(text, 14, y); y += 8; };
+      const addLine = (text) => { if (y > 270) { doc.addPage(); y = 20; } doc.setFontSize(10); doc.setFont(undefined, 'normal'); doc.text(text, 14, y); y += 6; };
+      const addGap = () => { y += 6; };
+
+      doc.setFontSize(18); doc.setFont(undefined, 'bold');
+      doc.text('MedVault Health Report', 14, y); y += 8;
+      addLine(`Generated: ${new Date().toLocaleDateString()}`);
+      addGap();
+
+      if (data.user) {
+        addTitle('Patient Information');
+        addLine(`Name: ${data.user.name || '-'}`);
+        addLine(`Email: ${data.user.email || '-'}`);
+        addLine(`Phone: ${data.user.phone || '-'}`);
+        addLine(`Blood Group: ${data.user.bloodGroup || '-'}`);
+        addGap();
+      }
+
+      if (data.prescriptions?.length) {
+        addTitle(`Prescriptions (${data.prescriptions.length})`);
+        data.prescriptions.forEach(p => {
+          addLine(`${new Date(p.date).toLocaleDateString()} - Dr. ${p.doctorName} | ${p.diagnosis || 'No diagnosis'}`);
+          p.medicines?.forEach(m => addLine(`    ${m.name} ${m.dosage} ${m.duration}`));
+        });
+        addGap();
+      }
+
+      if (data.medicines?.length) {
+        addTitle(`Medicines (${data.medicines.length})`);
+        data.medicines.forEach(m => addLine(`${m.name} - ${m.dosage}, ${m.frequency}`));
+        addGap();
+      }
+
+      if (data.appointments?.length) {
+        addTitle(`Appointments (${data.appointments.length})`);
+        data.appointments.forEach(a => addLine(`${new Date(a.date).toLocaleDateString()} ${a.time} - Dr. ${a.doctorName} (${a.status})`));
+        addGap();
+      }
+
+      if (data.vitals?.length) {
+        addTitle(`Vitals (${data.vitals.length})`);
+        data.vitals.slice(0, 20).forEach(v => addLine(`${v.type}: ${v.value} ${v.unit || ''} - ${new Date(v.date).toLocaleDateString()}`));
+        addGap();
+      }
+
+      if (data.doctors?.length) {
+        addTitle(`Doctors (${data.doctors.length})`);
+        data.doctors.forEach(d => addLine(`Dr. ${d.name} - ${d.specialty} | ${d.phone || ''}`));
+        addGap();
+      }
+
+      if (data.emergencyCard) {
+        addTitle('Emergency Card');
+        addLine(`Blood Group: ${data.emergencyCard.bloodGroup || '-'}`);
+        if (data.emergencyCard.allergies?.length) addLine(`Allergies: ${data.emergencyCard.allergies.join(', ')}`);
+        if (data.emergencyCard.conditions?.length) addLine(`Conditions: ${data.emergencyCard.conditions.join(', ')}`);
+        if (data.emergencyCard.currentMedications?.length) addLine(`Medications: ${data.emergencyCard.currentMedications.join(', ')}`);
+      }
+
+      doc.save(`medvault-health-report-${new Date().toISOString().split('T')[0]}.pdf`);
+      toast.success('Health report exported as PDF');
     } catch (err) { toast.error(err.message); }
     finally { setExporting(false); }
   };
@@ -90,7 +147,7 @@ export default function Settings() {
 
       <div className="settings-section">
         <h3>Data Export</h3>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginBottom: 16 }}>Download a complete copy of all your health records as a JSON file.</p>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginBottom: 16 }}>Download a complete copy of all your health records as a PDF file.</p>
         <button className="btn btn-outline" onClick={handleExport} disabled={exporting} id="export-btn">
           <MdDownload /> {exporting ? 'Exporting...' : 'Export Health Report'}
         </button>
